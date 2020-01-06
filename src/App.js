@@ -33,10 +33,13 @@ class App extends Component {
       speechText: '',
       hhOptions: [],
       playerOptions: [],
-      playerId: ''
+      playerId: '',
+      playerIds: [],
     };
+    this.playerIds = []
     this.textChange = this.textChange.bind(this);
     this.hhChange = this.hhChange.bind(this);
+    this.onHouseholdChange = this.onHouseholdChange.bind(this);
     this.playerChange = this.playerChange.bind(this);
     this.handleSubmit = this.handleSubmit.bind(this);
 
@@ -48,22 +51,23 @@ class App extends Component {
       .then(response => response.json())
       .then(json => {
         if (json.success) { // alright, we got something
+          let firstHousehold = json.households[0].id
           if (json.households.length > 1) { // if there's more than one, we'll want to populate the picklist, because we'll be showing that
             const opts=[];
             for (let hh of json.households) {
               opts.push(<option value={hh.id}>{hh.id}</option>);
             }
             this.setState({
-              hh: json.households[0].id,
+              hh: firstHousehold,
               hhOptions: opts
             })
           }
           else { // if there's only one, let's just grab it. we won't even be showing the picklist
             this.setState({
-              hh: json.households[0].id
+              hh: firstHousehold
             });
           }
-          this.hhChange();
+          this.hhChange(firstHousehold);
         }
         else if (json.authRequired) { // if we weren't successful, let's check and see if we've been told to auth, and if so, send user to auth endpoint
           window.location='http://localhost:3001/auth';
@@ -82,22 +86,35 @@ class App extends Component {
   }
 
   playerChange(event) {
-    this.setState({ playerId: event.target.value });
+    if (event.target.value !== 'all') {
+      this.setState({ playerId: event.target.value, playerIds: [event.target.value] });
+    } else {
+      this.setState({ playerId: 'all', playerIds: this.playerIds })
+    }
+  }
+
+  onHouseholdChange(event) {
+    const { value: hh } = event.target
+    this.hhChange(hh)
   }
 
 // whenever the household changes, let's get a list of available speakers
-  hhChange(event) {
-    fetch(`/api/clipCapableSpeakers?household=${this.state.hh}`)
+  hhChange(householdId) {
+    fetch(`/api/clipCapableSpeakers?household=${householdId}`)
       .then(response => response.json())
       .then(json => {
         if (json.success) {
           const opts=[];
+          this.playerIds = []
           for (let player of json.players) {
             opts.push(<option value={player.id}>{player.name}</option>);
+            this.playerIds.push(player.id)
           }
+          opts.push(<option value={'all'}>All speakers</option>)
           this.setState({
-            playerId: json.players[0].id,
-            playerOptions: opts
+            playerIds: [json.players[0].id],
+            playerOptions: opts,
+            hh: householdId,
           })
         }
         else {
@@ -109,15 +126,67 @@ class App extends Component {
 
   }
 
-  handleSubmit(event) {
-    event.preventDefault();
+  say = text => {
     this.setState({ // here we're clearing out any error that might have been on the screen before
       error:''
     });
-    fetch(`/api/speakText?text=${encodeURIComponent(this.state.speechText)}&playerId=${this.state.playerId}`)
+    console.log(this.playerIds)
+    // fetch(`/api/speakText?text=${encodeURIComponent(text)}&playerId=${this.state.playerId}`)
+    console.log('this.state.playerIds', this.state.playerIds)
+    const playerIdsQueryString = this.state.playerIds.reduce((result, playerId) => {
+      return `${result}&playerIds[]=${playerId}`
+    }, '')
+    fetch(`/api/speakText?text=${encodeURIComponent(text)}${playerIdsQueryString}`)
       .then(response => response.json())
       .then(state => this.setState(state))
       .catch(err => this.setState({error:err.stack}));
+  }
+
+  handleSubmit = (event) => {
+    event.preventDefault();
+    this.say(this.state.speechText)
+    // this.setState({ // here we're clearing out any error that might have been on the screen before
+    //   error:''
+    // });
+    // fetch(`/api/speakText?text=${encodeURIComponent(this.state.speechText)}&playerId=${this.state.playerId}`)
+    //   .then(response => response.json())
+    //   .then(state => this.setState(state))
+    //   .catch(err => this.setState({error:err.stack}));
+  }
+
+  sayShlug = (event) => {
+    event.preventDefault();
+    this.say('Idziemy na szluga')
+  }
+
+  drinkVodka = (event) => {
+    event.preventDefault();
+    this.say('Lej kielona')
+  }
+
+  sayGoodnight = (event) => {
+    event.preventDefault();
+    this.say('Dobra, czas do spanka')
+  }
+
+  buyMeABeer = (event) => {
+    event.preventDefault()
+    this.say('Ej ziomek, kup mi browarka plx')
+  }
+
+  roll = (event) => {
+    event.preventDefault()
+    this.say('Kręcimy pacana')
+  }
+
+  playFifa = (event) => {
+    event.preventDefault()
+    this.say('Dawaj gramy meczyk')
+  }
+
+  sayGit = (event) => {
+    event.preventDefault()
+    this.say('GIT!')
   }
 
   render() {
@@ -132,7 +201,7 @@ class App extends Component {
                 <label htmlFor="targetHH">Select your target household: </label>
                 <select
                   id="targetHH"
-                  onChange={this.hhChange}
+                  onChange={this.onHouseholdChange}
                   value={this.state.hh}
                 >
                   {this.state.hhOptions}
@@ -154,6 +223,13 @@ class App extends Component {
               onChange={this.textChange}
             /><br/>
           <button type="submit" disabled={!this.state.speechText}>Submit</button>
+          <button onClick={this.sayShlug}>Idziemy na szluga</button>
+          <button onClick={this.drinkVodka}>Lej wódę</button>
+          <button onClick={this.sayGoodnight}>Spanko</button>
+          <button onClick={this.buyMeABeer}>Kup piwko</button>
+          <button onClick={this.roll}>Zwijamy jaranko</button>
+          <button onClick={this.playFifa}>Gramy meczyk</button>
+          <button onClick={this.sayGit}>Git</button>
           </form>
           {this.state.error}
         </header>

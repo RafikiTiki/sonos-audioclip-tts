@@ -159,6 +159,10 @@ app.get('/api/households', async (req, res) => {
 // Here we'll get the list of speakers that are capable of playing audioClips
 // Note that the AUDIO_CLIP capability flag isn't implemented on the Sonos platform yet, so we have
 // to simply return all speakers for right now, and let the user figure out which ones work
+
+// async function getPLayerIds(req, res) {
+//
+// }
 app.get('/api/clipCapableSpeakers', async (req, res) => {
   const household = req.query.household;
 
@@ -209,7 +213,10 @@ app.get('/api/clipCapableSpeakers', async (req, res) => {
 // This is where we finally speak the text. The URL variables include the playerId and the text to speak
 app.get('/api/speakText', async (req, res) => {
   const text = req.query.text;
-  const playerId = req.query.playerId;
+  // const playerId = req.query.playerId;
+  console.log('req.query', req.query)
+  const playerIds = req.query.playerIds;
+  console.log('playerIds', playerIds)
 
   const speakTextRes = res;
   speakTextRes.setHeader('Content-Type', 'application/json');
@@ -217,7 +224,8 @@ app.get('/api/speakText', async (req, res) => {
     res.send(JSON.stringify({'success':false,authRequired:true}));
   }
 
-  if (text == null || playerId == null) { // Return if either is null
+  // if (text == null || playerId == null) { // Return if either is null
+  if (text == null || playerIds == null || playerIds.length === 0) { // Return if either is null
     speakTextRes.send(JSON.stringify({'success':false,error: 'Missing Parameters'}));
     return;
   }
@@ -225,7 +233,8 @@ app.get('/api/speakText', async (req, res) => {
   let speechUrl;
 
   try { // Let's make a call to the google tts api and get the url for our TTS file
-    speechUrl = await googleTTS(text, 'en-US', 1);
+    speechUrl = await googleTTS(text, 'pl-pl', 1);
+    console.log(speechUrl)
   }
   catch (err) {
     speakTextRes.send(JSON.stringify({'success':false,error: err.stack}));
@@ -234,34 +243,60 @@ app.get('/api/speakText', async (req, res) => {
 
   const body = { streamUrl: speechUrl, name: 'Sonos TTS', appId: 'com.me.sonosspeech' };
 
-  let audioClipRes;
+  // let audioClipRes;
+  let audioClipsTextsRes;
 
   try { // And call the audioclip API, with the playerId in the url path, and the text in the JSON body
-    audioClipRes = await fetch(`https://api.ws.sonos.com/control/api/v1/players/${playerId}/audioClip`, {
-     method: 'POST',
-      body:    JSON.stringify(body),
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.token.access_token}` },
-    });
+    audioClipsTextsRes = await Promise.all(playerIds.map(async playerId => {
+      return await fetch(`https://api.ws.sonos.com/control/api/v1/players/${playerId}/audioClip`, {
+        method: 'POST',
+        body:    JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.token.access_token}` },
+      });
+    }))
+    // audioClipRes = await fetch(`https://api.ws.sonos.com/control/api/v1/players/${playerId}/audioClip`, {
+    //  method: 'POST',
+    //   body:    JSON.stringify(body),
+    //   headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.token.access_token}` },
+    // });
   }
   catch (err) {
     speakTextRes.send(JSON.stringify({'success':false,error: err.stack}));
     return;
   }
+  
+  console.log('audioClipsTextsRes', audioClipsTextsRes)
 
-  const audioClipResText = await audioClipRes.text(); // Same thing as above: convert to text, since occasionally the Sonos API returns text
+  // const audioClipResText = await audioClipRes.text(); // Same thing as above: convert to text, since occasionally the Sonos API returns text
+
+  // try  {
+  //   const json = JSON.parse(audioClipResText);
+  //   if (json.id !== undefined) {
+  //     speakTextRes.send(JSON.stringify({'success': true}));
+  //   }
+  //   else {
+  //     speakTextRes.send(JSON.stringify({'success': false, 'error':json.errorCode}));
+  //   }
+  // }
+  // catch (err){
+  //   speakTextRes.send(JSON.stringify({'success':false, 'error': audioClipResText}));
+  // }
+
+  const temp = await Promise.all(audioClipsTextsRes.map(async res => res.text()))
 
   try  {
-    const json = JSON.parse(audioClipResText);
-    if (json.id !== undefined) {
+    const jsons = temp.map(resText => JSON.parse(resText))
+
+    if (jsons.every(json => json.id !== undefined)) {
       speakTextRes.send(JSON.stringify({'success': true}));
-    }
-    else {
+    } else {
       speakTextRes.send(JSON.stringify({'success': false, 'error':json.errorCode}));
     }
   }
   catch (err){
-    speakTextRes.send(JSON.stringify({'success':false, 'error': audioClipResText}));
+    speakTextRes.send(JSON.stringify({'success':false, 'error': temp}));
   }
+
 });
 
 app.listen(3001, () =>
